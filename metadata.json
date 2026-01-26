@@ -1,0 +1,5 @@
+{
+  "name": "Contextual Verified Translate",
+  "description": "A high-precision translation tool that uses a large language model to translate text in chunks while maintaining full context, featuring automatic back-translation for accuracy verification.",
+  "requestFramePermissions": []
+}

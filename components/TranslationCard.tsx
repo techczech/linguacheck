@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TranslationSegment } from '../types';
 
 interface TranslationCardProps {
@@ -8,6 +8,8 @@ interface TranslationCardProps {
 }
 
 const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, targetLang }) => {
+  const [showPrompt, setShowPrompt] = useState(false);
+
   const isPending = segment.status === 'idle';
   const isTranslating = segment.status === 'translating';
   const isVerifying = segment.status === 'verifying';
@@ -16,7 +18,7 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
 
   return (
     <div className={`
-      relative rounded-xl border transition-all duration-500 overflow-hidden
+      relative rounded-xl border transition-all duration-500 overflow-hidden flex flex-col
       ${isPending ? 'border-slate-100 bg-slate-50 opacity-60' : 'border-slate-200 bg-white shadow-sm hover:shadow-md'}
       ${(isTranslating || isVerifying) ? 'ring-2 ring-indigo-100 border-indigo-200' : ''}
     `}>
@@ -27,13 +29,30 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100 flex-1">
         
         {/* Source Text */}
-        <div className="p-5 flex flex-col gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-            {sourceLang} (Original)
-          </span>
+        <div className="p-5 flex flex-col gap-2 relative group">
+          <div className="flex items-center justify-between mb-1">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              {sourceLang} (Original)
+            </span>
+            
+            {/* Info/Prompt Toggle Button */}
+            {segment.promptUsed && (
+               <button 
+                onClick={() => setShowPrompt(!showPrompt)}
+                className={`p-1 rounded hover:bg-slate-100 transition-colors ${showPrompt ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-indigo-600'}`}
+                title="View Contextual Prompt Used"
+               >
+                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+               </button>
+            )}
+          </div>
+         
           <p className="text-slate-800 leading-relaxed text-sm whitespace-pre-wrap">
             {segment.original}
           </p>
@@ -84,6 +103,26 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
         </div>
       </div>
       
+      {/* Prompt Debug View (Collapsible) */}
+      {showPrompt && segment.promptUsed && (
+        <div className="border-t border-slate-200 bg-slate-100 p-4 animate-fade-in">
+          <div className="flex items-center justify-between mb-2">
+             <h4 className="text-xs font-bold text-slate-500 uppercase">Contextual Prompt Sent to AI</h4>
+             <button onClick={() => setShowPrompt(false)} className="text-slate-400 hover:text-slate-600">
+               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+             </button>
+          </div>
+          <div className="bg-slate-800 text-slate-200 p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-60 scrollbar-thin">
+            <pre className="whitespace-pre-wrap">{segment.promptUsed}</pre>
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500">
+            This exact prompt was used to generate the translation for this segment, ensuring the model had the full document context.
+          </div>
+        </div>
+      )}
+
       {isError && (
         <div className="bg-red-50 border-t border-red-100 p-3 text-red-600 text-xs flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">

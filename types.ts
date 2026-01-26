@@ -5,6 +5,7 @@ export interface TranslationSegment {
   backTranslated: string | null;
   status: 'idle' | 'translating' | 'verifying' | 'completed' | 'error';
   error?: string;
+  promptUsed?: string; // To store the full context prompt for user inspection
 }
 
 export interface LanguageOption {
@@ -16,6 +17,15 @@ export interface ModelOption {
   id: string;
   name: string;
 }
+
+export type SegmentationType = 'paragraphs' | 'sentences' | 'lines' | 'smart';
+
+export const SEGMENTATION_OPTIONS: { value: SegmentationType; label: string; description: string }[] = [
+  { value: 'paragraphs', label: 'Paragraphs', description: 'Best for articles and essays. Preserves flow.' },
+  { value: 'sentences', label: 'Sentences', description: 'Granular precision. Good for complex syntax.' },
+  { value: 'lines', label: 'Line Breaks', description: 'Best for poetry, lyrics, or lists.' },
+  { value: 'smart', label: 'Smart Grouping', description: 'Groups sentences (~500 chars) to balance context and speed.' },
+];
 
 export const LANGUAGES: LanguageOption[] = [
   { code: 'English', name: 'English' },

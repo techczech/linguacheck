@@ -17,7 +17,7 @@ export const translateSegment = async (
   targetLang: string,
   modelId: string,
   customInstructions?: string
-): Promise<string> => {
+): Promise<{ text: string; prompt: string }> => {
   const ai = getAiClient();
   
   // Clean up instructions if provided
@@ -52,7 +52,10 @@ export const translateSegment = async (
       contents: prompt,
     });
     
-    return response.text?.trim() || "";
+    return {
+        text: response.text?.trim() || "",
+        prompt: prompt
+    };
   } catch (error) {
     console.error("Translation error:", error);
     throw new Error("Failed to translate segment.");

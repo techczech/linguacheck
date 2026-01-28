@@ -3,7 +3,8 @@ export interface TranslationSegment {
   original: string;
   translated: string | null;
   backTranslated: string | null;
-  status: 'idle' | 'translating' | 'verifying' | 'completed' | 'error';
+  evaluation: string | null;
+  status: 'idle' | 'translating' | 'verifying' | 'evaluating' | 'completed' | 'error';
   error?: string;
   promptUsed?: string; // To store the full context prompt for user inspection
 }
@@ -18,13 +19,14 @@ export interface ModelOption {
   name: string;
 }
 
-export type SegmentationType = 'paragraphs' | 'sentences' | 'lines' | 'smart';
+export type SegmentationType = 'paragraphs' | 'sentences' | 'lines' | 'smart' | 'none';
 
 export const SEGMENTATION_OPTIONS: { value: SegmentationType; label: string; description: string }[] = [
   { value: 'paragraphs', label: 'Paragraphs', description: 'Best for articles and essays. Preserves flow.' },
   { value: 'sentences', label: 'Sentences', description: 'Granular precision. Good for complex syntax.' },
   { value: 'lines', label: 'Line Breaks', description: 'Best for poetry, lyrics, or lists.' },
   { value: 'smart', label: 'Smart Grouping', description: 'Groups sentences (~500 chars) to balance context and speed.' },
+  { value: 'none', label: 'No Segmentation', description: 'Translate the entire text at once. Best for short texts.' },
 ];
 
 export const LANGUAGES: LanguageOption[] = [

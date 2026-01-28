@@ -13,6 +13,7 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
   const isPending = segment.status === 'idle';
   const isTranslating = segment.status === 'translating';
   const isVerifying = segment.status === 'verifying';
+  const isEvaluating = segment.status === 'evaluating';
   const isCompleted = segment.status === 'completed';
   const isError = segment.status === 'error';
 
@@ -20,12 +21,15 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
     <div className={`
       relative rounded-xl border transition-all duration-500 overflow-hidden flex flex-col
       ${isPending ? 'border-slate-100 bg-slate-50 opacity-60' : 'border-slate-200 bg-white shadow-sm hover:shadow-md'}
-      ${(isTranslating || isVerifying) ? 'ring-2 ring-indigo-100 border-indigo-200' : ''}
+      ${(isTranslating || isVerifying || isEvaluating) ? 'ring-2 ring-indigo-100 border-indigo-200' : ''}
     `}>
       {/* Status Bar */}
-      {(isTranslating || isVerifying) && (
+      {(isTranslating || isVerifying || isEvaluating) && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-50">
-          <div className="h-full bg-indigo-500 animate-loading-bar w-1/3 rounded-r-full"></div>
+          <div 
+            className="h-full bg-indigo-500 animate-loading-bar rounded-r-full"
+            style={{ width: isTranslating ? '30%' : isVerifying ? '60%' : '90%' }}
+          ></div>
         </div>
       )}
 
@@ -86,7 +90,7 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
                <p className="text-slate-600 leading-relaxed text-sm whitespace-pre-wrap">
                 {segment.backTranslated}
               </p>
-              {isCompleted && (
+              {isCompleted && !segment.evaluation && (
                  <div className="mt-2 text-xs text-slate-400 flex items-center gap-1">
                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-emerald-500">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
@@ -102,6 +106,31 @@ const TranslationCard: React.FC<TranslationCardProps> = ({ segment, sourceLang, 
           )}
         </div>
       </div>
+
+      {/* Evaluation Section */}
+      {(segment.evaluation || isEvaluating) && (
+        <div className="border-t border-amber-100 bg-amber-50/50 p-4">
+           <div className="flex items-center gap-2 mb-2">
+             <span className="text-xs font-bold text-amber-600 uppercase tracking-wider flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+               Quality Evaluation
+             </span>
+             {isEvaluating && <span className="text-amber-600 animate-pulse text-[10px] lowercase bg-amber-100 px-1.5 py-0.5 rounded-full">analyzing...</span>}
+           </div>
+           
+           {segment.evaluation ? (
+              <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap pl-5 border-l-2 border-amber-200">
+                {segment.evaluation}
+              </div>
+           ) : (
+             <div className="text-amber-400 text-sm italic pl-5">
+               Reviewing original, translation, and back-translation for quality issues...
+             </div>
+           )}
+        </div>
+      )}
       
       {/* Prompt Debug View (Collapsible) */}
       {showPrompt && segment.promptUsed && (

@@ -4,12 +4,13 @@ export const splitTextIntoChunks = (text: string, strategy: SegmentationType = '
   const trimmedText = text.trim();
   if (!trimmedText) return [];
 
+  if (strategy === 'none') {
+    return [trimmedText];
+  }
+
   switch (strategy) {
     case 'sentences':
       // Split by common sentence terminators (. ! ?) followed by whitespace or end of string
-      // This regex keeps the delimiter attached to the previous sentence usually, but for simplicity in JS split:
-      // We use a lookbehind approximation or match approach. 
-      // Match non-terminators followed by terminators.
       const sentenceMatches = trimmedText.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g);
       return sentenceMatches ? sentenceMatches.map(s => s.trim()) : [trimmedText];
 
@@ -46,4 +47,52 @@ export const splitTextIntoChunks = (text: string, strategy: SegmentationType = '
 
 export const generateId = (): string => {
   return Math.random().toString(36).substring(2, 9);
+};
+
+// Heuristic: ~4 characters per token
+export const estimateTokens = (text: string): number => {
+  return Math.ceil(text.length / 4);
+};
+
+export const calculateTranslationCost = (text: string, strategy: SegmentationType): { standard: number, contextual: number, segmentCount: number } => {
+  const segments = splitTextIntoChunks(text, strategy);
+  const fullTextTokens = estimateTokens(text);
+  const systemPromptOverhead = 150; // Approx tokens for system instructions per request
+
+  // Standard: Text is sent once (plus overhead)
+  const standard = fullTextTokens + systemPromptOverhead;
+
+  const segmentCount = segments.length;
+
+  // If no segmentation is used, we just send the text once. The cost is the same as standard.
+  if (strategy === 'none') {
+    return { standard, contextual: standard, segmentCount: 1 };
+  }
+  
+  // Contextual Calculation:
+  // For each segment i, we send:
+  // 1. Full Document Context (fullTextTokens)
+  // 2. Translation So Far (Sum of segments 0 to i-1) -> Estimated via source text length of previous segments
+  // 3. Current Segment (segment i tokens)
+  // 4. Instructions/Overhead
+  
+  let contextual = 0;
+  let tokensSoFar = 0;
+  
+  for (const segment of segments) {
+      const segmentTokens = estimateTokens(segment);
+      
+      const promptCost = 
+        fullTextTokens + // Full context
+        tokensSoFar +    // Translation history (estimated using source tokens)
+        segmentTokens +  // Current segment
+        systemPromptOverhead; // Instructions
+        
+      contextual += promptCost;
+      
+      // Update history for next iteration
+      tokensSoFar += segmentTokens;
+  }
+
+  return { standard, contextual, segmentCount };
 };

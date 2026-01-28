@@ -2,37 +2,66 @@ import React, { useState, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import InputArea from './components/InputArea';
 import TranslationCard from './components/TranslationCard';
+import SettingsModal from './components/SettingsModal';
 import { TranslationSegment, MODELS, SegmentationType } from './types';
 import { splitTextIntoChunks, generateId } from './utils/textHelpers';
-import { translateSegment, backTranslateSegment } from './services/geminiService';
+import { translateSegment, backTranslateSegment, evaluateTranslationSegment } from './services/geminiService';
+import { downloadJSON, downloadCSV } from './utils/exportHelpers';
 
 const App: React.FC = () => {
-  const [inputText, setInputText] = useState<string>('');
-  
-  // Language State
-  const [sourceLang, setSourceLang] = useState<string>('English');
-  const [targetLang, setTargetLang] = useState<string>('');
-  
-  // Model State
-  const [translationModel, setTranslationModel] = useState<string>(MODELS[0].id); // Default to Flash
-  const [verificationModel, setVerificationModel] = useState<string>(MODELS[0].id); // Default to Flash
-  const [segmentationStrategy, setSegmentationStrategy] = useState<SegmentationType>('paragraphs');
-  const [customInstructions, setCustomInstructions] = useState<string>('');
+  // --- Persistent State Initialization ---
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
 
-  const [segments, setSegments] = useState<TranslationSegment[]>([]);
+  const [inputText, setInputText] = useState<string>(() => localStorage.getItem('inputText') || '');
+  const [sourceLang, setSourceLang] = useState<string>(() => localStorage.getItem('sourceLang') || 'English');
+  const [targetLang, setTargetLang] = useState<string>(() => localStorage.getItem('targetLang') || '');
+  
+  const [translationModel, setTranslationModel] = useState<string>(() => localStorage.getItem('translationModel') || MODELS[0].id);
+  const [verificationModel, setVerificationModel] = useState<string>(() => localStorage.getItem('verificationModel') || MODELS[0].id);
+  const [segmentationStrategy, setSegmentationStrategy] = useState<SegmentationType>(() => (localStorage.getItem('segmentationStrategy') as SegmentationType) || 'none');
+  const [customInstructions, setCustomInstructions] = useState<string>(() => localStorage.getItem('customInstructions') || '');
+  const [enableEvaluation, setEnableEvaluation] = useState<boolean>(() => localStorage.getItem('enableEvaluation') === 'true');
+
+  const [segments, setSegments] = useState<TranslationSegment[]>(() => {
+    const saved = localStorage.getItem('segments');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // --- Runtime State ---
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  
-  // UI State
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   
-  // Use a ref to control the cancellation or strict sequential flow if needed
+  // Refs
   const processingRef = useRef(false);
-
-  // Smooth scroll to new segments or updates
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // --- Persistence Effects ---
+  useEffect(() => localStorage.setItem('gemini_api_key', apiKey), [apiKey]);
+  useEffect(() => localStorage.setItem('inputText', inputText), [inputText]);
+  useEffect(() => localStorage.setItem('sourceLang', sourceLang), [sourceLang]);
+  useEffect(() => localStorage.setItem('targetLang', targetLang), [targetLang]);
+  useEffect(() => localStorage.setItem('translationModel', translationModel), [translationModel]);
+  useEffect(() => localStorage.setItem('verificationModel', verificationModel), [verificationModel]);
+  useEffect(() => localStorage.setItem('segmentationStrategy', segmentationStrategy), [segmentationStrategy]);
+  useEffect(() => localStorage.setItem('customInstructions', customInstructions), [customInstructions]);
+  useEffect(() => localStorage.setItem('enableEvaluation', String(enableEvaluation)), [enableEvaluation]);
+  useEffect(() => localStorage.setItem('segments', JSON.stringify(segments)), [segments]);
+
+  // Scroll to bottom when new segments are added
+  useEffect(() => {
+    if (isProcessing && bottomRef.current) {
+        bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [segments.length, isProcessing]);
+
 
   const startTranslation = async () => {
     if (!inputText.trim()) return;
+
+    // Clear previous if we are starting fresh (optional: could be append mode, but usually people want fresh)
+    // For this app, we'll clear segments to start a new run
+    setSegments([]);
 
     setIsProcessing(true);
     processingRef.current = true;
@@ -42,54 +71,77 @@ const App: React.FC = () => {
       setIsSidebarOpen(false);
     }
 
-    // 1. Chunk the text based on selected strategy
     const textChunks = splitTextIntoChunks(inputText, segmentationStrategy);
     
-    // 2. Initialize segments
     const initialSegments: TranslationSegment[] = textChunks.map(chunk => ({
       id: generateId(),
       original: chunk,
       translated: null,
       backTranslated: null,
+      evaluation: null,
       status: 'idle'
     }));
     
     setSegments(initialSegments);
 
-    // 3. Process sequentially
+    let accumulatedTranslation = "";
+
     for (let i = 0; i < initialSegments.length; i++) {
       if (!processingRef.current) break;
 
       const segmentId = initialSegments[i].id;
 
-      // --- Start Translation ---
       updateSegmentStatus(segmentId, 'translating');
       
       try {
+        // 1. Translate
         const { text: translated, prompt } = await translateSegment(
           initialSegments[i].original,
-          inputText, // Full context
+          inputText,
+          accumulatedTranslation,
           sourceLang,
           targetLang,
           translationModel,
-          customInstructions
+          customInstructions,
+          apiKey // Pass custom key if present
         );
+
+        accumulatedTranslation += (accumulatedTranslation ? "\n" : "") + translated;
 
         updateSegment(segmentId, { 
           translated, 
-          promptUsed: prompt, // Store the prompt for transparency
+          promptUsed: prompt,
           status: 'verifying' 
         });
 
-        // --- Start Back-Translation ---
+        // 2. Back-Translate
         const backTranslated = await backTranslateSegment(
           translated,
-          sourceLang, // Back translate to source
-          targetLang,  // From target
-          verificationModel
+          sourceLang,
+          targetLang,
+          verificationModel,
+          apiKey // Pass custom key if present
         );
 
-        updateSegment(segmentId, { backTranslated, status: 'completed' });
+        updateSegment(segmentId, { backTranslated });
+
+        // 3. Optional Evaluation
+        if (enableEvaluation) {
+          updateSegmentStatus(segmentId, 'evaluating');
+          const evaluation = await evaluateTranslationSegment(
+             initialSegments[i].original,
+             translated,
+             backTranslated,
+             sourceLang,
+             targetLang,
+             inputText, // Full context
+             verificationModel, // Use same model as verification for simplicity
+             apiKey
+          );
+          updateSegment(segmentId, { evaluation, status: 'completed' });
+        } else {
+          updateSegmentStatus(segmentId, 'completed');
+        }
 
       } catch (error) {
         updateSegment(segmentId, { status: 'error', error: 'Failed to process segment.' });
@@ -108,10 +160,23 @@ const App: React.FC = () => {
     setSegments(prev => prev.map(seg => seg.id === id ? { ...seg, ...updates } : seg));
   };
 
+  const clearHistory = () => {
+    if(window.confirm('Are you sure you want to clear all translation results?')) {
+        setSegments([]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Header />
+      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
       
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        apiKey={apiKey}
+        onSaveKey={setApiKey}
+      />
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 gap-6 flex flex-col lg:flex-row h-[calc(100vh-64px)] items-start">
         
         {/* Left Panel: Input & Controls (Collapsible) */}
@@ -148,9 +213,13 @@ const App: React.FC = () => {
                setSegmentationStrategy={setSegmentationStrategy}
                customInstructions={customInstructions}
                setCustomInstructions={setCustomInstructions}
+               
+               enableEvaluation={enableEvaluation}
+               setEnableEvaluation={setEnableEvaluation}
 
                onStart={startTranslation}
                isProcessing={isProcessing}
+               hasCustomKey={!!apiKey}
              />
            </div>
         </div>
@@ -179,13 +248,43 @@ const App: React.FC = () => {
                 {segments.length > 0 && <span className="text-sm font-normal text-slate-400">({segments.length} segments)</span>}
               </h2>
             </div>
-
-            {segments.length > 0 && isProcessing && (
-               <span className="text-xs font-medium text-indigo-600 animate-pulse bg-indigo-50 px-3 py-1 rounded-full flex items-center gap-2">
-                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-600"></span>
-                 Processing
-               </span>
-            )}
+            
+            <div className="flex items-center gap-2">
+                {segments.length > 0 && isProcessing && (
+                <span className="text-xs font-medium text-indigo-600 animate-pulse bg-indigo-50 px-3 py-1 rounded-full flex items-center gap-2 mr-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-600"></span>
+                    Processing
+                </span>
+                )}
+                
+                {segments.length > 0 && (
+                    <div className="flex items-center gap-1 border-l border-slate-200 pl-3">
+                        <button 
+                            onClick={() => downloadJSON(segments)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition-colors"
+                            title="Export JSON"
+                        >
+                            <span className="text-xs font-bold font-mono">JSON</span>
+                        </button>
+                        <button 
+                            onClick={() => downloadCSV(segments)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition-colors"
+                            title="Export CSV"
+                        >
+                            <span className="text-xs font-bold font-mono">CSV</span>
+                        </button>
+                         <button 
+                            onClick={clearHistory}
+                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors ml-1"
+                            title="Clear History"
+                        >
+                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                )}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth">

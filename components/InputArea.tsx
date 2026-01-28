@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { LANGUAGES, MODELS, SEGMENTATION_OPTIONS, SegmentationType } from '../types';
+import { calculateTranslationCost } from '../utils/textHelpers';
 
 interface InputAreaProps {
   inputText: string;
@@ -17,10 +18,16 @@ interface InputAreaProps {
   setSegmentationStrategy: (strategy: SegmentationType) => void;
   customInstructions: string;
   setCustomInstructions: (text: string) => void;
+  
+  enableEvaluation: boolean;
+  setEnableEvaluation: (enable: boolean) => void;
 
   onStart: () => void;
   isProcessing: boolean;
+  hasCustomKey: boolean;
 }
+
+const DEFAULT_TOKEN_LIMIT = 5000;
 
 const InputArea: React.FC<InputAreaProps> = ({
   inputText,
@@ -37,8 +44,11 @@ const InputArea: React.FC<InputAreaProps> = ({
   setSegmentationStrategy,
   customInstructions,
   setCustomInstructions,
+  enableEvaluation,
+  setEnableEvaluation,
   onStart,
   isProcessing,
+  hasCustomKey,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
 
@@ -52,12 +62,22 @@ const InputArea: React.FC<InputAreaProps> = ({
   const sourceSelectValue = getSelectValue(sourceLang);
   const targetSelectValue = getSelectValue(targetLang);
 
+  // Calculate costs
+  const { standard, contextual, segmentCount } = useMemo(() => {
+    return calculateTranslationCost(inputText, segmentationStrategy);
+  }, [inputText, segmentationStrategy]);
+
+  // If custom key is provided, the limit is effectively infinite
+  const effectiveLimit = hasCustomKey ? Infinity : DEFAULT_TOKEN_LIMIT;
+  const isOverLimit = contextual > effectiveLimit;
+
   const isValid = 
     inputText.trim().length > 0 &&
     sourceLang.trim().length > 0 &&
     sourceLang !== 'custom' &&
     targetLang.trim().length > 0 &&
-    targetLang !== 'custom';
+    targetLang !== 'custom' &&
+    !isOverLimit;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
@@ -174,6 +194,72 @@ const InputArea: React.FC<InputAreaProps> = ({
             ))}
           </select>
         </div>
+
+        {/* Evaluation Toggle */}
+        <div className="flex items-center gap-3 bg-slate-100 p-2.5 rounded-lg border border-slate-200">
+           <div className="flex items-center h-5">
+            <input
+              id="enable-eval"
+              type="checkbox"
+              checked={enableEvaluation}
+              onChange={(e) => setEnableEvaluation(e.target.checked)}
+              disabled={isProcessing}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+            />
+          </div>
+          <div className="text-sm">
+            <label htmlFor="enable-eval" className="font-medium text-slate-700 block">Enable AI Quality Evaluation</label>
+            <p className="text-xs text-slate-500">Analyze for unclarities & inconsistencies (uses more tokens)</p>
+          </div>
+        </div>
+
+        {/* Token Usage & Cost Estimates */}
+        {inputText.length > 0 && (
+          <div className={`text-xs rounded-lg p-3 border ${isOverLimit ? 'bg-red-50 border-red-200 text-red-800' : 'bg-blue-50 border-blue-100 text-blue-800'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold flex items-center gap-2">
+                Estimated Token Usage
+                {hasCustomKey && (
+                  <span className="bg-emerald-100 text-emerald-700 px-1.5 rounded text-[10px] uppercase font-bold tracking-wider">
+                    Unlimited
+                  </span>
+                )}
+              </span>
+              <span className={`font-mono ${isOverLimit ? 'font-bold' : ''}`}>
+                {contextual.toLocaleString()} {hasCustomKey ? '' : `/ ${DEFAULT_TOKEN_LIMIT.toLocaleString()}`}
+              </span>
+            </div>
+            
+            <div className="w-full bg-white/50 rounded-full h-1.5 mb-2 overflow-hidden">
+               <div 
+                 className={`h-full rounded-full ${isOverLimit ? 'bg-red-500' : 'bg-blue-500'}`}
+                 style={{ width: hasCustomKey ? '100%' : `${Math.min((contextual / DEFAULT_TOKEN_LIMIT) * 100, 100)}%` }}
+               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[10px] opacity-80">
+              <div>
+                <span className="block uppercase tracking-wider text-[9px] mb-0.5">Standard</span>
+                <span className="font-mono">{standard.toLocaleString()} tokens</span>
+              </div>
+              <div>
+                 <span className="block uppercase tracking-wider text-[9px] mb-0.5">Context-Aware</span>
+                 <span className="font-mono">{contextual.toLocaleString()} tokens</span>
+              </div>
+            </div>
+            
+            {isOverLimit && !hasCustomKey && (
+              <div className="mt-2 flex items-start gap-1 text-[10px] text-red-600 font-medium">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 mt-0.5 flex-shrink-0">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+                <span>
+                  Usage exceeds free limit. To process larger texts, please add your own API key in Settings (BYOK).
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons Row */}
         <div className="flex items-center gap-3">

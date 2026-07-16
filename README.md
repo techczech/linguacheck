@@ -1,3 +1,12 @@
+---
+name: "LinguaCheck"
+description: "Uses full-document context to preserve tone and terminology during translation, making verification part of the experience."
+categories: [interactive-learning-objects, web-app, built-by-ai, powered-by-ai]
+updated: 2026-07-16
+deployments:
+  Appsite:
+    "LinguaCheck": https://contextual-verified-translate-cjmr775lua-uw.a.run.app/
+---
 # Contextual Verified Translate (LinguaCheck)
 
 A high-precision, AI-powered translation tool designed for accuracy and nuance. Unlike standard translation services that often translate sentences in isolation, this application processes text while maintaining the **full document context**, ensuring consistent tone and terminology throughout. 

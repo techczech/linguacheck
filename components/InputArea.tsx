@@ -77,7 +77,8 @@ const InputArea: React.FC<InputAreaProps> = ({
     sourceLang !== 'custom' &&
     targetLang.trim().length > 0 &&
     targetLang !== 'custom' &&
-    !isOverLimit;
+    !isOverLimit &&
+    hasCustomKey;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
@@ -221,7 +222,7 @@ const InputArea: React.FC<InputAreaProps> = ({
                 Estimated Token Usage
                 {hasCustomKey && (
                   <span className="bg-emerald-100 text-emerald-700 px-1.5 rounded text-[10px] uppercase font-bold tracking-wider">
-                    Unlimited
+                    Your API account
                   </span>
                 )}
               </span>
@@ -254,13 +255,14 @@ const InputArea: React.FC<InputAreaProps> = ({
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                 </svg>
                 <span>
-                  Usage exceeds free limit. To process larger texts, please add your own API key in Settings (BYOK).
+                  Add your Gemini API key in Settings to translate this text. Your provider’s usage limits apply.
                 </span>
               </div>
             )}
           </div>
         )}
 
+        {!hasCustomKey && <p role="status" className="text-sm text-indigo-800">Add your Gemini API key in Settings to translate. Saved results remain available without a key.</p>}
         {/* Action Buttons Row */}
         <div className="flex items-center gap-3">
            <button

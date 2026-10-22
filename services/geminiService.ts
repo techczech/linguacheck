@@ -1,26 +1,43 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
-// Initialize with an optional key, falling back to env var
+// Every request uses the visitor key; there is no shared deployment credential.
 const getAiClient = (customKey?: string) => {
-  const apiKey = customKey || process.env.API_KEY;
+  const apiKey = customKey?.trim();
   if (!apiKey) {
-    throw new Error("API Key is missing. Please provide a Custom API Key in settings or check environment variables.");
+    throw new Error("Add your Gemini API key in Settings before translating.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey, vertexai: false });
+};
+
+const requestError = (error: unknown, signal?: AbortSignal): Error => {
+  if (signal?.aborted) return new Error('Translation stopped because the key or run changed.');
+  const status = (error as {status?: number; code?: number})?.status ?? (error as {code?: number})?.code;
+  if (status === 401 || status === 403) return new Error('Check your Gemini API key and its permissions in Settings.');
+  if (status === 429) return new Error('Your Gemini quota is exhausted. Wait and try again, or check your API account.');
+  if (status === 400 || status === 404) return new Error('Gemini could not process this request. Check your key in Settings and the selected model.');
+  return new Error('Gemini could not complete the request. Check your connection and try again.');
 };
 
 // Helper function to delay execution
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  signal?.throwIfAborted();
+  const abort = () => { clearTimeout(timer); reject(new Error('Translation stopped.')); };
+  const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+  signal?.addEventListener('abort', abort, {once: true});
+});
 
 // Generic retry wrapper for API calls
 const withRetry = async <T>(
   operation: () => Promise<T>,
+  signal?: AbortSignal,
   retries = 3,
   backoff = 2000 // Start with 2 seconds
 ): Promise<T> => {
   try {
+    signal?.throwIfAborted();
     return await operation();
   } catch (error: any) {
+    signal?.throwIfAborted();
     const isRateLimit =
       error?.status === 429 ||
       error?.code === 429 ||
@@ -33,8 +50,8 @@ const withRetry = async <T>(
 
     if (isRateLimit && retries > 0) {
       console.warn(`Rate limit hit (429). Retrying in ${backoff}ms... (${retries} attempts left)`);
-      await delay(backoff);
-      return withRetry(operation, retries - 1, backoff * 2);
+      await delay(backoff, signal);
+      return withRetry(operation, signal, retries - 1, backoff * 2);
     }
     
     throw error;
@@ -49,7 +66,8 @@ export const translateSegment = async (
   targetLang: string,
   modelId: string,
   customInstructions?: string,
-  apiKey?: string
+  apiKey?: string,
+  signal?: AbortSignal
 ): Promise<{ text: string; prompt: string }> => {
   const ai = getAiClient(apiKey);
   
@@ -107,15 +125,15 @@ export const translateSegment = async (
     const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
       model: modelId,
       contents: prompt,
-    }));
+      config: {abortSignal: signal},
+    }), signal);
     
     return {
         text: response.text?.trim() || "",
         prompt: prompt
     };
   } catch (error) {
-    console.error("Translation error:", error);
-    throw new Error("Failed to translate segment after retries.");
+    throw requestError(error, signal);
   }
 };
 
@@ -124,7 +142,8 @@ export const backTranslateSegment = async (
   sourceLang: string,
   targetLang: string,
   modelId: string,
-  apiKey?: string
+  apiKey?: string,
+  signal?: AbortSignal
 ): Promise<string> => {
   const ai = getAiClient(apiKey);
 
@@ -150,12 +169,12 @@ export const backTranslateSegment = async (
     const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
       model: modelId,
       contents: prompt,
-    }));
+      config: {abortSignal: signal},
+    }), signal);
     
     return response.text?.trim() || "";
   } catch (error) {
-    console.error("Back-translation error:", error);
-    throw new Error("Failed to back-translate segment after retries.");
+    throw requestError(error, signal);
   }
 };
 
@@ -167,7 +186,8 @@ export const evaluateTranslationSegment = async (
   targetLang: string,
   fullContext: string,
   modelId: string,
-  apiKey?: string
+  apiKey?: string,
+  signal?: AbortSignal
 ): Promise<string> => {
   const ai = getAiClient(apiKey);
 
@@ -206,11 +226,11 @@ export const evaluateTranslationSegment = async (
     const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
       model: modelId,
       contents: prompt,
-    }));
+      config: {abortSignal: signal},
+    }), signal);
     
     return response.text?.trim() || "";
   } catch (error) {
-    console.error("Evaluation error:", error);
-    return "Failed to generate evaluation report.";
+    throw requestError(error, signal);
   }
 };

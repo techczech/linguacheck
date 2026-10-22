@@ -7,10 +7,13 @@ import { TranslationSegment, MODELS, SegmentationType } from './types';
 import { splitTextIntoChunks, generateId } from './utils/textHelpers';
 import { translateSegment, backTranslateSegment, evaluateTranslationSegment } from './services/geminiService';
 import { downloadJSON, downloadCSV } from './utils/exportHelpers';
+import { readKeySettings, saveKeySettings } from './services/keySettings';
 
 const App: React.FC = () => {
   // --- Persistent State Initialization ---
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
+  const [keySettings, setKeySettings] = useState(() => readKeySettings(localStorage));
+  const {key: apiKey, remember: rememberKey} = keySettings;
+  const [keyStorageError, setKeyStorageError] = useState('');
 
   const [inputText, setInputText] = useState<string>(() => localStorage.getItem('inputText') || '');
   const [sourceLang, setSourceLang] = useState<string>(() => localStorage.getItem('sourceLang') || 'English');
@@ -34,10 +37,14 @@ const App: React.FC = () => {
   
   // Refs
   const processingRef = useRef(false);
+  const requestControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // --- Persistence Effects ---
-  useEffect(() => localStorage.setItem('gemini_api_key', apiKey), [apiKey]);
+  useEffect(() => {
+    const saved = saveKeySettings(localStorage, apiKey, rememberKey);
+    setKeyStorageError(saved ? '' : 'Browser storage is unavailable. Your key works only in this tab.');
+  }, [apiKey, rememberKey]);
   useEffect(() => localStorage.setItem('inputText', inputText), [inputText]);
   useEffect(() => localStorage.setItem('sourceLang', sourceLang), [sourceLang]);
   useEffect(() => localStorage.setItem('targetLang', targetLang), [targetLang]);
@@ -58,11 +65,15 @@ const App: React.FC = () => {
 
   const startTranslation = async () => {
     if (!inputText.trim()) return;
+    if (!apiKey.trim()) { setIsSettingsOpen(true); return; }
 
     // Clear previous if we are starting fresh (optional: could be append mode, but usually people want fresh)
     // For this app, we'll clear segments to start a new run
     setSegments([]);
 
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
     setIsProcessing(true);
     processingRef.current = true;
     
@@ -87,7 +98,7 @@ const App: React.FC = () => {
     let accumulatedTranslation = "";
 
     for (let i = 0; i < initialSegments.length; i++) {
-      if (!processingRef.current) break;
+      if (!processingRef.current || controller.signal.aborted) break;
 
       const segmentId = initialSegments[i].id;
 
@@ -103,7 +114,8 @@ const App: React.FC = () => {
           targetLang,
           translationModel,
           customInstructions,
-          apiKey // Pass custom key if present
+          apiKey,
+          controller.signal
         );
 
         accumulatedTranslation += (accumulatedTranslation ? "\n" : "") + translated;
@@ -114,16 +126,21 @@ const App: React.FC = () => {
           status: 'verifying' 
         });
 
+        if (!processingRef.current || controller.signal.aborted) break;
+
         // 2. Back-Translate
         const backTranslated = await backTranslateSegment(
           translated,
           sourceLang,
           targetLang,
           verificationModel,
-          apiKey // Pass custom key if present
+          apiKey,
+          controller.signal
         );
 
         updateSegment(segmentId, { backTranslated });
+
+        if (!processingRef.current || controller.signal.aborted) break;
 
         // 3. Optional Evaluation
         if (enableEvaluation) {
@@ -136,7 +153,8 @@ const App: React.FC = () => {
              targetLang,
              inputText, // Full context
              verificationModel, // Use same model as verification for simplicity
-             apiKey
+             apiKey,
+             controller.signal
           );
           updateSegment(segmentId, { evaluation, status: 'completed' });
         } else {
@@ -144,12 +162,15 @@ const App: React.FC = () => {
         }
 
       } catch (error) {
-        updateSegment(segmentId, { status: 'error', error: 'Failed to process segment.' });
+        updateSegment(segmentId, { status: 'error', error: error instanceof Error ? error.message : 'Gemini could not complete the request.' });
       }
     }
 
-    setIsProcessing(false);
-    processingRef.current = false;
+    if (requestControllerRef.current === controller) {
+      setIsProcessing(false);
+      processingRef.current = false;
+      requestControllerRef.current = null;
+    }
   };
 
   const updateSegmentStatus = (id: string, status: TranslationSegment['status']) => {
@@ -174,7 +195,13 @@ const App: React.FC = () => {
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
         apiKey={apiKey}
-        onSaveKey={setApiKey}
+        rememberKey={rememberKey}
+        storageError={keyStorageError}
+        onSaveKey={(key, remember) => {
+          processingRef.current = false;
+          requestControllerRef.current?.abort();
+          setKeySettings({key: key.trim(), remember});
+        }}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 gap-6 flex flex-col lg:flex-row h-[calc(100vh-64px)] items-start">

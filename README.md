@@ -67,20 +67,21 @@ It features an automatic **back-translation verification** step, converting the 
     npm install
     ```
 
-3.  **Environment Configuration:**
-    *   The application requires the `API_KEY` to be available in `process.env`.
-    *   Create a `.env` file in the root directory:
-        ```
-        API_KEY=your_gemini_api_key_here
-        ```
-    *   *Note: If using a bundler like Vite/Parcel, ensure the variable is exposed correctly (e.g., `VITE_API_KEY` or configured via define plugins).*
-
-4.  **Run the Application:**
+3.  **Run the Application:**
     ```bash
-    npm start
-    # or
     npm run dev
     ```
+    Open Settings and enter your own Gemini API key. No environment key is used or embedded in the build. Keys stay in memory unless you select “Remember my key in this browser”. Clear Key removes the saved credential; translation results stay available.
+
+4.  **Build for static hosting:**
+    ```bash
+    npm ci
+    npm test
+    npm run typecheck
+    npm run build
+    npm run preview
+    ```
+    Use Node 22.18 or newer. Publish `dist/` on a static host such as Cloudflare Pages, with build command `npm run build` and output directory `dist`. No server, Cloud Run proxy or build secret is required. Publication and the existing address switch are separate release steps.
 
 ## 📖 Usage Guide
 
@@ -109,6 +110,10 @@ It features an automatic **back-translation verification** step, converting the 
 *   **Styling:** Tailwind CSS
 *   **AI SDK:** `@google/genai` (Gemini API)
 *   **Models:** Gemini 3 Flash Preview, Gemini 3 Pro Preview
+
+## Verification limits
+
+Automated tests use mocked Gemini responses. No paid API request is made by the test suite. A live account check remains part of publication verification.
 
 ## 📄 License
 
